@@ -1,0 +1,27 @@
+name: Deploy MT5 Headless
+
+on:
+  schedule:
+    - cron: "50 20 * * *" # Example: 20:50 UTC (23:50 EAT), ~10 mins before midnight EAT
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Start MT5 on temporary VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
+          MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "$VPS_USER@$VPS_HOST" \
+            "MT5_LOGIN='$MT5_LOGIN' MT5_PASSWORD='$MT5_PASSWORD' docker compose -f ~/mt5-bot/docker-compose.yml up -d"
