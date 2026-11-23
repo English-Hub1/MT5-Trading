@@ -1,27 +1,69 @@
-name: Deploy MT5 Headless
+name: Run MT5 Cycle on GitHub Runner
 
 on:
   schedule:
-    - cron: "50 20 * * *" # Example: 20:50 UTC (23:50 EAT), ~10 mins before midnight EAT
+    - cron: "50 20 * * *" # ~20:50 UTC (23:50 EAT)
   workflow_dispatch:
 
 jobs:
-  deploy:
+  trade-cycle:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Start MT5 on temporary VPS
+      - name: Install Wine and Xvfb (Virtual Display)
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y wine64 wine32 xvfb wget
+
+      - name: Download & Setup Portable MT5
+        run: |
+          mkdir -p ~/mt5/MQL5/Experts ~/mt5/Config
+          wget -q https://mql5.com -O ~/mt5setup.exe
+          # Install MT5 silently into ~/mt5
+          xvfb-run -a wine ~/mt5setup.exe /auto /path:"Z:\home\runner\mt5" || true
+          sleep 15
+
+      - name: Copy EA, Servers, and Generate mt5.ini
         env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
           MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
         run: |
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 "$VPS_USER@$VPS_HOST" \
-            "MT5_LOGIN='$MT5_LOGIN' MT5_PASSWORD='$MT5_PASSWORD' docker compose -f ~/mt5-bot/docker-compose.yml up -d"
+          # Copy files from your GitHub repo
+          cp ImmediateBuy24h.ex5 ~/mt5/MQL5/Experts/
+          cp servers.dat ~/mt5/Config/
+
+          # Create mt5.ini directly inside the runner
+          cat <<EOF > ~/mt5/mt5.ini
+          [Common]
+          Login=${MT5_LOGIN}
+          Password=${MT5_PASSWORD}
+          Server=Exness-MT5Real27
+          KeepPrivate=1
+          NewsEnable=0
+
+          [Experts]
+          AllowLiveTrading=1
+          AllowDllImport=0
+          Enabled=1
+
+          [StartUp]
+          Expert=ImmediateBuy24h
+          Symbol=BTCUSDm
+          Period=M1
+          EOF
+
+      - name: Launch MT5 and Execute Trade Cycle (Runs for 3 mins)
+        run: |
+          # Run MT5 headless for 180 seconds so it logs in, closes old ticket, and opens new ticket
+          timeout 180s xvfb-run -a wine ~/mt5/terminal64.exe /portable /config:Z:\\home\\runner\\mt5\\mt5.ini || true
+
+      - name: Print MT5 Logs for Verification
+        if: always()
+        run: |
+          cat ~/mt5/MQL5/Logs/*.log || true
+          cat ~/mt5/Logs/*.log || true
