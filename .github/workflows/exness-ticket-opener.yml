@@ -7,7 +7,7 @@ on:
 
 jobs:
   trade-cycle:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     steps:
@@ -18,14 +18,18 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y wine64 wine32 xvfb wget
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y wine64 wine32 xvfb wget file
 
       - name: Download & Setup MT5
         run: |
-          wget -q https://mql5.com -O ~/mt5setup.exe
+          wget --user-agent="Mozilla/5.0" -O ~/mt5setup.exe "https://mql5.com"
+          file ~/mt5setup.exe
+          # Verify it is an actual Windows executable (PE32), not an HTML page
+          file ~/mt5setup.exe | grep -q "PE32" || { echo "Downloaded file is not a valid Windows .exe!"; exit 1; }
+
           xvfb-run -a wine ~/mt5setup.exe /auto || true
 
-          # Wait up to 90s for mt5setup to finish installing terminal64.exe
+          # Wait up to 90s for installer to finish extracting terminal64.exe
           for i in $(seq 1 18); do
             FOUND=$(find ~/.wine ~/ -name "terminal64.exe" 2>/dev/null | head -n 1)
             if [ -n "$FOUND" ]; then
@@ -35,7 +39,6 @@ jobs:
             sleep 5
           done
 
-          # Stop any auto-launched GUI instance from the installer so /config takes effect
           pkill -9 -f terminal64.exe || true
           sleep 2
 
