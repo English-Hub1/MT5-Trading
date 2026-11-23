@@ -20,25 +20,44 @@ jobs:
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y wine64 wine32 xvfb wget
 
-      - name: Download & Setup Portable MT5
+      - name: Download & Setup MT5
         run: |
-          mkdir -p ~/mt5/MQL5/Experts ~/mt5/Config
           wget -q https://mql5.com -O ~/mt5setup.exe
-          # Install MT5 silently into ~/mt5
-          xvfb-run -a wine ~/mt5setup.exe /auto /path:"Z:\home\runner\mt5" || true
-          sleep 15
+          xvfb-run -a wine ~/mt5setup.exe /auto || true
+
+          # Wait up to 90s for mt5setup to finish installing terminal64.exe
+          for i in $(seq 1 18); do
+            FOUND=$(find ~/.wine ~/ -name "terminal64.exe" 2>/dev/null | head -n 1)
+            if [ -n "$FOUND" ]; then
+              echo "Found terminal64.exe at: $FOUND"
+              break
+            fi
+            sleep 5
+          done
+
+          # Stop any auto-launched GUI instance from the installer so /config takes effect
+          pkill -9 -f terminal64.exe || true
+          sleep 2
 
       - name: Copy EA, Servers, and Generate mt5.ini
         env:
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
           MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
         run: |
-          # Copy files from your GitHub repo
-          cp ImmediateBuy24h.ex5 ~/mt5/MQL5/Experts/
-          cp servers.dat ~/mt5/Config/
+          TERM_EXE=$(find ~/.wine ~/ -name "terminal64.exe" 2>/dev/null | head -n 1)
+          if [ -z "$TERM_EXE" ]; then
+            echo "ERROR: terminal64.exe was not found after installation!"
+            exit 1
+          fi
 
-          # Create mt5.ini directly inside the runner
-          cat <<EOF > ~/mt5/mt5.ini
+          MT5_DIR=$(dirname "$TERM_EXE")
+          echo "Using MT5_DIR=$MT5_DIR"
+
+          mkdir -p "$MT5_DIR/MQL5/Experts" "$MT5_DIR/Config"
+          cp ImmediateBuy24h.ex5 "$MT5_DIR/MQL5/Experts/"
+          cp servers.dat "$MT5_DIR/Config/"
+
+          cat <<EOF > "$MT5_DIR/mt5.ini"
           [Common]
           Login=${MT5_LOGIN}
           Password=${MT5_PASSWORD}
@@ -59,11 +78,22 @@ jobs:
 
       - name: Launch MT5 and Execute Trade Cycle (Runs for 3 mins)
         run: |
-          # Run MT5 headless for 180 seconds so it logs in, closes old ticket, and opens new ticket
-          timeout 180s xvfb-run -a wine ~/mt5/terminal64.exe /portable /config:Z:\\home\\runner\\mt5\\mt5.ini || true
+          TERM_EXE=$(find ~/.wine ~/ -name "terminal64.exe" 2>/dev/null | head -n 1)
+          MT5_DIR=$(dirname "$TERM_EXE")
+          WIN_INI=$(winepath -w "$MT5_DIR/mt5.ini")
+          echo "Launching $TERM_EXE with /config:$WIN_INI"
+          timeout 180s xvfb-run -a wine "$TERM_EXE" /portable /config:"$WIN_INI" || true
 
       - name: Print MT5 Logs for Verification
         if: always()
         run: |
-          cat ~/mt5/MQL5/Logs/*.log || true
-          cat ~/mt5/Logs/*.log || true
+          TERM_EXE=$(find ~/.wine ~/ -name "terminal64.exe" 2>/dev/null | head -n 1)
+          MT5_DIR=$(dirname "$TERM_EXE")
+          echo "=== TERMINAL LOGS ==="
+          for f in "$MT5_DIR/Logs/"*.log; do
+            [ -f "$f" ] && (iconv -f UTF-16LE -t UTF-8 "$f" 2>/dev/null || cat "$f")
+          done
+          echo "=== EXPERT LOGS ==="
+          for f in "$MT5_DIR/MQL5/Logs/"*.log; do
+            [ -f "$f" ] && (iconv -f UTF-16LE -t UTF-8 "$f" 2>/dev/null || cat "$f")
+          done
