@@ -8,7 +8,7 @@ on:
 jobs:
   trade-cycle:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -91,7 +91,7 @@ jobs:
           MT5_DIR=$(dirname "$TERM_EXE")
           WIN_INI=$(winepath -w "$MT5_DIR/Config/mt5.ini")
           echo "Launching $TERM_EXE on DISPLAY=$DISPLAY with /config:$WIN_INI"
-          timeout 240s wine "$TERM_EXE" /portable /config:"$WIN_INI" || true
+          timeout 900s wine "$TERM_EXE" /portable /config:"$WIN_INI" || true
 
       - name: Print MT5 Logs for Verification
         if: always()
