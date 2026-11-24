@@ -14,21 +14,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install 64-bit Wine and Xvfb (Fast Minimal Install)
+      - name: Install Wine and Xvfb
         run: |
+          sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends wine64 wine xvfb wget file ca-certificates
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends wine wine64 wine32 xvfb wget file ca-certificates
 
       - name: Download & Setup MT5
         run: |
-          wget --user-agent="Mozilla/5.0" -O ~/mt5setup.exe "https://mql5.com"
-          file ~/mt5setup.exe
+          wget --user-agent="Mozilla/5.0" -q -O ~/mt5setup.exe "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
           file ~/mt5setup.exe | grep -q "PE32" || { echo "Downloaded file is not a valid Windows .exe!"; exit 1; }
 
-          xvfb-run -a wine64 ~/mt5setup.exe /auto || true
+          xvfb-run -a wine ~/mt5setup.exe /auto || true
 
-          # Wait up to 90s for installer to finish extracting terminal64.exe
-          for i in $(seq 1 18); do
+          for i in $(seq 1 24); do
             FOUND=$(find ~/.wine ~/ -name "terminal64.exe" 2>/dev/null | head -n 1)
             if [ -n "$FOUND" ]; then
               echo "Found terminal64.exe at: $FOUND"
@@ -55,10 +54,10 @@ jobs:
           echo "Using MT5_DIR=$MT5_DIR"
 
           mkdir -p "$MT5_DIR/MQL5/Experts" "$MT5_DIR/Config"
-          cp ImmediateBuy24h.ex5 "$MT5_DIR/MQL5/Experts/"
-          cp servers.dat "$MT5_DIR/Config/"
+          cp -f ImmediateBuy24h.ex5 "$MT5_DIR/MQL5/Experts/"
+          cp -f servers.dat "$MT5_DIR/Config/"
 
-          cat <<EOF > "$MT5_DIR/mt5.ini"
+          cat <<EOF > "$MT5_DIR/Config/mt5.ini"
           [Common]
           Login=${MT5_LOGIN}
           Password=${MT5_PASSWORD}
@@ -77,13 +76,13 @@ jobs:
           Period=M1
           EOF
 
-      - name: Launch MT5 and Execute Trade Cycle (Runs for 3 mins)
+      - name: Launch MT5 and Execute Trade Cycle (Runs for 4 mins)
         run: |
           TERM_EXE=$(find ~/.wine ~/ -name "terminal64.exe" 2>/dev/null | head -n 1)
           MT5_DIR=$(dirname "$TERM_EXE")
-          WIN_INI=$(winepath -w "$MT5_DIR/mt5.ini")
+          WIN_INI=$(winepath -w "$MT5_DIR/Config/mt5.ini")
           echo "Launching $TERM_EXE with /config:$WIN_INI"
-          timeout 180s xvfb-run -a wine64 "$TERM_EXE" /portable /config:"$WIN_INI" || true
+          timeout 240s xvfb-run -a wine "$TERM_EXE" /portable /config:"$WIN_INI" || true
 
       - name: Print MT5 Logs for Verification
         if: always()
