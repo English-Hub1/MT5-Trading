@@ -18,14 +18,23 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends wine wine64 wine32 xvfb wget file ca-certificates
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            wine wine64 wine32 xvfb wget file ca-certificates \
+            libx11-6 libxext6 libxrandr2 libxrender1 libxi6 libxcursor1
+
+      - name: Start Persistent Virtual Display (:99)
+        run: |
+          Xvfb :99 -screen 0 1280x800x24 -ac +extension GLX +render -noreset >/tmp/xvfb.log 2>&1 &
+          sleep 2
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+          ps aux | grep "[X]vfb"
 
       - name: Download & Setup MT5
         run: |
           wget --user-agent="Mozilla/5.0" -q -O ~/mt5setup.exe "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
           file ~/mt5setup.exe | grep -q "PE32" || { echo "Downloaded file is not a valid Windows .exe!"; exit 1; }
 
-          xvfb-run -a wine ~/mt5setup.exe /auto || true
+          wine ~/mt5setup.exe /auto || true
 
           for i in $(seq 1 24); do
             FOUND=$(find ~/.wine ~/ -name "terminal64.exe" 2>/dev/null | head -n 1)
@@ -81,8 +90,8 @@ jobs:
           TERM_EXE=$(find ~/.wine ~/ -name "terminal64.exe" 2>/dev/null | head -n 1)
           MT5_DIR=$(dirname "$TERM_EXE")
           WIN_INI=$(winepath -w "$MT5_DIR/Config/mt5.ini")
-          echo "Launching $TERM_EXE with /config:$WIN_INI"
-          timeout 240s xvfb-run -a wine "$TERM_EXE" /portable /config:"$WIN_INI" || true
+          echo "Launching $TERM_EXE on DISPLAY=$DISPLAY with /config:$WIN_INI"
+          timeout 240s wine "$TERM_EXE" /portable /config:"$WIN_INI" || true
 
       - name: Print MT5 Logs for Verification
         if: always()
@@ -94,10 +103,12 @@ jobs:
           fi
           MT5_DIR=$(dirname "$TERM_EXE")
           echo "=== TERMINAL LOGS ==="
-          for f in "$MT5_DIR/Logs/"*.log; do
-            [ -f "$f" ] && (iconv -f UTF-16LE -t UTF-8 "$f" 2>/dev/null || cat "$f")
+          find "$MT5_DIR/Logs" -name "*.log" -type f 2>/dev/null | sort | while read -r f; do
+            echo "--- $f ---"
+            iconv -f UTF-16LE -t UTF-8 "$f" 2>/dev/null || cat "$f" || true
           done
           echo "=== EXPERT LOGS ==="
-          for f in "$MT5_DIR/MQL5/Logs/"*.log; do
-            [ -f "$f" ] && (iconv -f UTF-16LE -t UTF-8 "$f" 2>/dev/null || cat "$f")
+          find "$MT5_DIR/MQL5/Logs" -name "*.log" -type f 2>/dev/null | sort | while read -r f; do
+            echo "--- $f ---"
+            iconv -f UTF-16LE -t UTF-8 "$f" 2>/dev/null || cat "$f" || true
           done
