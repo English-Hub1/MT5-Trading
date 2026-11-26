@@ -1,8 +1,6 @@
 name: Run MT5 Cycle on GitHub Runner
 
 on:
-  schedule:
-    - cron: "50 20 * * *" # ~20:50 UTC (23:50 EAT)
   workflow_dispatch:
 
 jobs:
